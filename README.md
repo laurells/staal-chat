@@ -1,8 +1,10 @@
 # staal-chat
 
-Messages to Slack channels: a [Staal](https://github.com/laurells/staal) package that gives
-programs the `chat.slack.post` capability, built on Staal's general `net.http`
-capability. It talks to [Slack](https://api.slack.com/methods/chat.postMessage).
+Messages to Slack and Discord channels: a [Staal](https://github.com/laurells/staal)
+package that gives programs the `chat.slack.post` and `chat.discord.post` capabilities,
+built on Staal's general `net.http` capability. It talks to
+[Slack](https://api.slack.com/methods/chat.postMessage) and
+[Discord](https://discord.com/developers/docs/resources/message#create-message) (API v10).
 
 ## Authority
 
@@ -12,7 +14,7 @@ beyond it.
 
 | Capability | Targets |
 | --- | --- |
-| `net.http.post` | `https://slack.com/api/chat.postMessage` |
+| `net.http.post` | `https://slack.com/api/chat.postMessage`, `https://discord.com/api/v10/channels/*/messages` |
 
 ## Install
 
@@ -38,10 +40,11 @@ staalc fetch
 
 ## Use
 
-The capability's action:
+Each capability's action:
 
 ```
 chat.slack: post(channel: Text @target, text: Text) -> Text
+chat.discord: post(channel: Text @target, text: Text) -> Text
 ```
 
 A program imports the module and asks for the capability with its own limits:
@@ -82,11 +85,28 @@ Slack answers 200 even when it refuses a message; the library turns `"ok": false
 
 Slack does not deduplicate requests, so do not grant `idempotency_key`: a post interrupted mid-request stops the run for an operator instead of risking a second message.
 
+Discord posts as a bot. Targets are channel ids (digits), and the bot needs the
+SEND_MESSAGES permission in the channel. Its grant:
+
+```json
+"discord": { "cap": "chat.discord.post", "only": ["1234567890123456789"], "uses": 5,
+             "needs": { "http": { "cap": "net.http.post", "only": ["https://discord.com/api/v10/channels/1234567890123456789/messages"] },
+                        "token": { "env": "DISCORD_BOT_TOKEN" } } }
+```
+
+Mentions are never parsed (`allowed_mentions` with an empty `parse`), so text from an
+agent cannot ping `@everyone`, a role or a person. A text over Discord's 2000
+characters is refused before any request. Discord's `enforce_nonce` deduplicates only
+"in the past few minutes", which a resumed run is not held to, so it is not used and
+`http` is granted without `idempotency_key`. The receipt is the message's id; an answer
+for another channel is a failure.
+
 ## Status
 
-Tested end to end against a local server that answers like the service, as part of
-the [Staal test suite](https://github.com/laurells/staal/blob/main/tests/packages_test.rs).
-Not yet run against the live service.
+Tested end to end against a local server that answers like each service, as part of
+the [Staal test suite](https://github.com/laurells/staal): Slack in `tests/packages_test.rs`,
+Discord by the cases in `tests/` here, run on both engines and killed at every journal
+write. Not yet run against the live services.
 
 ## License
 
